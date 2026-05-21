@@ -1,0 +1,88 @@
+-- ============================================================================
+--                          RAIDASSIST BOT SUMMARY
+-- ============================================================================
+-- This MacroQuest Lua utility automates raid monitoring, targeting, and pathing.
+-- It offers a responsive, non-blocking automation workflow managed by a 
+-- multi-stage state machine that interacts smoothly with your user interface.
+--
+-- DETAILED FUNCTION DIRECTORY & STRUCTURAL SPECIFICATIONS:
+--
+-- 1) ensureRaidAssistDeclared()
+--    -> SYSTEM MECHANICS: Probes the MacroQuest variable table via the string parser 
+--       token '${Defined[RaidAssist]}'. If the return value is not string 'TRUE',
+--       it dynamically injects an outer-scoped variable allocation into the system 
+--       memory table utilizing the direct engine execution command: '/declare RaidAssist string outer'.
+--    -> ARCHITECTURAL PURPOSE: Ensures variable permanence so that other active macros 
+--       or system scripts running in parallel can pull the exact same targeting target data.
+--
+-- 2) isRaidAssistValid()
+--    -> SYSTEM MECHANICS: Evaluates the current state value assigned to the outer 
+--       RaidAssist variable wrapper. Uses a protective conditional filter cascade to trap 
+--       empty data parameters, initialization placeholders, unmapped type arrays, and literal 
+--       C++ code string dumps.
+--    -> EXCLUSION FILTERS: Returns boolean 'false' if the variable content equals an empty line, 
+--       nil values, or the exact text literals: "NULL", "string", '""', or "''". 
+--       Returns boolean 'true' only when a valid, actionable name is locked in.
+--
+-- 3) loadRaidNames()
+--    -> SYSTEM MECHANICS: Loops sequentially through the live server raid database via 
+--       the Top-Level Object data framework: 'mq.TLO.Raid.Member(index)'. 
+--    -> FILTRATION SIEVE: Cross-references name strings on every calculation pass. To prevent 
+--       targeting bouncing and multi-box interface conflicts, it instantly discards your local 
+--       player character's name wrapper and maps an inner loop condition block using 
+--       'mq.TLO.Group.Member(name)() ~= nil' to filter out and drop your entire immediate group.
+--    -> SYSTEM AUTOMATION: Sorts remaining non-grouped characters alphabetically using an internal 
+--       table sorting function layout. If the total element stack length matches 0 (such as when 
+--       you leave or disband from a raid), it sets the tracking flag to false, points the drop-down 
+--       index back to position 1, and clears the client's macro outer variable back to an empty string.
+--
+-- 4) setRaidAssistAndExit()
+--    -> SYSTEM MECHANICS: Extracts the string name value resting at the selected combo row index position. 
+--       Issues a cross-client server broadcast to the Raid Channel via '/rs', pushes a chat notification 
+--       to your local terminal layout box, triggers a cursor selection packet targeting the player exactly 
+--       once as an audio-visual confirmation hook, and wipes the state memory registries.
+--    -> REGISTRY RESET: Automatically sets the combat sequence tracker back to 0 (Idle) and zeroes out 
+--       the target memory parameters to guarantee a clean slate for the next engagement pass.
+--
+-- 5) broadcastGroupFollow(actionType)
+--    -> SYSTEM MECHANICS: Coordinates cross-client movement synchronization using the target network 
+--       pipeline manager plugin layer. If the group member count is 0 or 'MQ2Mono' is missing from 
+--       your plugin registry stack, it exits the loop instantly to prevent pipeline buffer leaks.
+--    -> SEQUENCE ACTION - "START": Queries your exact numerical target entity identifier via the 
+--       TLO wrapper 'mq.TLO.Me.ID()'. Pushes a network broadcast using the specified group prefix '/e3bcgz' 
+--       to route a zone-wide command forcing your multi-boxes to navigate to your exact ID node position via 
+--       'mq2nav'. Immediately afterward, it fires a local client execution call to the macro command '/followme 10'.
+--    -> SEQUENCE ACTION - "STOP": Packs a combined formatting layout command string utilizing a safe, 
+--       non-blocking '/multiline' packet layer. Dispatches a sequence down the network connection prefix that 
+--       stops navigation mesh routes, cuts core follow states via '/followoff', and issues a backward friction pad 
+--       keypress to kill all momentum instantly across your background accounts without locking your main thread frames.
+--
+-- 6) executeAutomationLogic()
+--    -> SYSTEM MECHANICS: The primary heart loop executed on every thread evaluation frame pass. Splits duties into:
+--       A) Throttled Proximity Navigation: Monitored by a millisecond cooling interval tracker clock. If you 
+--          turn on follow states and the target player drifts past your threshold setting (>20 paces), it issues a mesh 
+--          path command tracking their live Spawn ID parameter, adjusting automatically if you run without 'mq2nav'.
+--       B) State Machine Combat Sequencing: A non-blocking automation engine that continuously tracks your RaidAssist's 
+--          hate/threat values via your own local client Extended Target window buffer pipeline ('${Me.XTarget[Name].AggroPct}').
+--          - STEP 0 (Idle Scanner): If the RA builds threat (Aggro > 0) and the reset delay timer clears, it issues a 
+--            client-side '/assist' instruction. If 'Announce Assist' is active, it reads the target name from the RA's 
+--            XTarget slot and broadcasts an alert line directly to your Raid channel loop. ADVANCES TO STEP 1.
+--          - STEP 1 (Target Validation Gate): Probes your live cursor target bar array. It screens attributes to confirm 
+--            the selection is a live entity, matches an NPC object flag type, and is not a corpse. It then screens hostile status 
+--            via '.Aggressive()' or matches its unique entity ID against your live XTarget list slots. If proven hostile, it 
+--            activates auto-attack strings via '/attack on' and ADVANCES TO STEP 2. Includes a 4-second timeout self-termination escape hook.
+--          - STEP 2 (Engagement Lock Listener): Listens until your player character physically draws combat hate or locks into 
+--            a native combat loop state on that target. Once combat verifies, it dispatches the silent team signal string command 
+--            '/assistme' down to your client box. ADVANCES TO STEP 3.
+--          - STEP 3 (Cooldown Settling Filter): Holds thread parameters steady for a 5-second global buffer period to prevent 
+--            command bouncing or target switching glitches before sliding back to Step 0.
+--          - SAFETY INTERCEPT: If you drop out of combat, the monster dies, or the assist clears their threat panel, the script 
+--            suspends nav movement paths and safely returns back to Step 0 immediately.
+--
+-- 7) drawUI()
+--    -> SYSTEM MECHANICS: The core responsive render engine canvas managed by ImGui. Draws an automatic resizable frame layout window.
+--       Displays live color-coded target status alerts (COMBAT = Red, IDLE / NO COMBAT = Green, OUT OF ZONE = Grey) based on active 
+--       tracking conditions, groups the responsive inline combo box selection tray and Manual list refresh buttons together side by side 
+--       using an external item width compression wrapper to align signatures safely, and links the Announce Assist and Follow Assist control 
+--       toggle buttons horizontally on a single line by calculating active layout dimensions via 'ImGui.GetWindowWidth()' mathematically.
+-- ============================================================================
