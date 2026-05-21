@@ -1,12 +1,12 @@
--- ============================================
---            RAIDASSIST BOT SUMMARY
--- ============================================
+============================================
+            RAIDASSIST BOT SUMMARY
+============================================
 -- This MacroQuest Lua utility automates raid monitoring, targeting, and pathing.
 -- It offers a responsive, non-blocking automation workflow managed by a 
 -- multi-stage state machine that interacts smoothly with your user interface.
 --
 -- DETAILED FUNCTION DIRECTORY & STRUCTURAL SPECIFICATIONS:
---
+-----------------------------------------------
 -- 1) ensureRaidAssistDeclared()
 --    -> SYSTEM MECHANICS: Probes the MacroQuest variable table via the string parser 
 --       token '${Defined[RaidAssist]}'. If the return value is not string 'TRUE',
@@ -14,7 +14,7 @@
 --       memory table utilizing the direct engine execution command: '/declare RaidAssist string outer'.
 --    -> ARCHITECTURAL PURPOSE: Ensures variable permanence so that other active macros 
 --       or system scripts running in parallel can pull the exact same targeting target data.
---
+-----------------------------------------------
 -- 2) isRaidAssistValid()
 --    -> SYSTEM MECHANICS: Evaluates the current state value assigned to the outer 
 --       RaidAssist variable wrapper. Uses a protective conditional filter cascade to trap 
@@ -23,7 +23,7 @@
 --    -> EXCLUSION FILTERS: Returns boolean 'false' if the variable content equals an empty line, 
 --       nil values, or the exact text literals: "NULL", "string", '""', or "''". 
 --       Returns boolean 'true' only when a valid, actionable name is locked in.
---
+-----------------------------------------------
 -- 3) loadRaidNames()
 --    -> SYSTEM MECHANICS: Loops sequentially through the live server raid database via 
 --       the Top-Level Object data framework: 'mq.TLO.Raid.Member(index)'. 
@@ -35,7 +35,7 @@
 --       table sorting function layout. If the total element stack length matches 0 (such as when 
 --       you leave or disband from a raid), it sets the tracking flag to false, points the drop-down 
 --       index back to position 1, and clears the client's macro outer variable back to an empty string.
---
+-----------------------------------------------
 -- 4) setRaidAssistAndExit()
 --    -> SYSTEM MECHANICS: Extracts the string name value resting at the selected combo row index position. 
 --       Issues a cross-client server broadcast to the Raid Channel via '/rs', pushes a chat notification 
@@ -43,7 +43,7 @@
 --       once as an audio-visual confirmation hook, and wipes the state memory registries.
 --    -> REGISTRY RESET: Automatically sets the combat sequence tracker back to 0 (Idle) and zeroes out 
 --       the target memory parameters to guarantee a clean slate for the next engagement pass.
---
+-----------------------------------------------
 -- 5) broadcastGroupFollow(actionType)
 --    -> SYSTEM MECHANICS: Coordinates cross-client movement synchronization using the target network 
 --       pipeline manager plugin layer. If the group member count is 0 or 'MQ2Mono' is missing from 
@@ -56,7 +56,7 @@
 --       non-blocking '/multiline' packet layer. Dispatches a sequence down the network connection prefix that 
 --       stops navigation mesh routes, cuts core follow states via '/followoff', and issues a backward friction pad 
 --       keypress to kill all momentum instantly across your background accounts without locking your main thread frames.
---
+-----------------------------------------------
 -- 6) executeAutomationLogic()
 --    -> SYSTEM MECHANICS: The primary heart loop executed on every thread evaluation frame pass. Splits duties into:
 --       A) Throttled Proximity Navigation: Monitored by a millisecond cooling interval tracker clock. If you 
@@ -78,11 +78,12 @@
 --            command bouncing or target switching glitches before sliding back to Step 0.
 --          - SAFETY INTERCEPT: If you drop out of combat, the monster dies, or the assist clears their threat panel, the script 
 --            suspends nav movement paths and safely returns back to Step 0 immediately.
---
+-----------------------------------------------
 -- 7) drawUI()
 --    -> SYSTEM MECHANICS: The core responsive render engine canvas managed by ImGui. Draws an automatic resizable frame layout window.
 --       Displays live color-coded target status alerts (COMBAT = Red, IDLE / NO COMBAT = Green, OUT OF ZONE = Grey) based on active 
 --       tracking conditions, groups the responsive inline combo box selection tray and Manual list refresh buttons together side by side 
 --       using an external item width compression wrapper to align signatures safely, and links the Announce Assist and Follow Assist control 
 --       toggle buttons horizontally on a single line by calculating active layout dimensions via 'ImGui.GetWindowWidth()' mathematically.
+-----------------------------------------------
 -- ============================================
