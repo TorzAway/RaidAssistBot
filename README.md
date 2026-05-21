@@ -1,5 +1,7 @@
 -----------------------------------------------
-        RAIDASSIST BOT SUMMARY
+        
+		RAIDASSIST BOT SUMMARY
+		
 -----------------------------------------------
 
 -- This MacroQuest Lua utility automates raid monitoring, targeting, and pathing.
