@@ -1,6 +1,6 @@
-============================================
+=====================================
             RAIDASSIST BOT SUMMARY
-============================================
+=====================================
 -- This MacroQuest Lua utility automates raid monitoring, targeting, and pathing.
 -- It offers a responsive, non-blocking automation workflow managed by a 
 -- multi-stage state machine that interacts smoothly with your user interface.
@@ -86,4 +86,4 @@
 --       using an external item width compression wrapper to align signatures safely, and links the Announce Assist and Follow Assist control 
 --       toggle buttons horizontally on a single line by calculating active layout dimensions via 'ImGui.GetWindowWidth()' mathematically.
 -----------------------------------------------
--- ============================================
+=====================================
