@@ -1,4 +1,4 @@
-		RAIDASSIST BOT 
+RAIDASSIST BOT: This script is SPECIFIC to the: Project Lazarus (EMU) EverQuest server.
 		
 -- This MacroQuest Lua utility automates raid monitoring, targeting, and pathing.
 -- It offers a responsive, non-blocking automation workflow managed by a 
