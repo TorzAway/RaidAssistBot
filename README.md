@@ -79,7 +79,6 @@
 --             Slider range: 30–100 feet in increments of 5. Internally operates on a scaled range (6–20)
 --             multiplied by 5 to enforce discrete 5-foot stepping. Only rendered when RaidAssist is valid.
 --         - Announce toggle button (ON/OFF) | Follow Assist toggle button (START / STOP / Paused)
------------------------------------------------
 
 ![](./images/RaidAsist_Bot_Image_1.png)  
 ![](./images/RaidAsist_Bot_Image_2.png)  
