@@ -3,7 +3,9 @@
 
 -----------------------------------------------
 -- OVERVIEW & ARCHITECTURE:
-This MacroQuest Lua script operates an asynchronous frame polling execution engine layout. By shifting background automation routines directly into the ImGui draw tick layer, the thread tracks environment data synchronously with client graphics cycles, entirely eliminating instant-close crashes or thread drift.
+This MacroQuest Lua script operates an asynchronous frame polling execution engine layout. 
+
+By shifting background automation routines directly into the ImGui draw tick layer, the thread tracks environment data synchronously with client graphics cycles, entirely eliminating instant-close crashes or thread drift.
 -----------------------------------------------
 <img width="333" height="181" alt="RaidAsist_Bot_Image_1" src="https://github.com/user-attachments/assets/26b8f5fe-6a3f-4f77-a097-793dd7765288"/>
 <br>
