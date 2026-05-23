@@ -1,5 +1,5 @@
 -- =========================================================================================================
---                                   RAIDASSIST BOT SYSTEM DOCUMENTATION
+--                                        RAIDASSIST BOT SYSTEM DOCUMENTATION
 -- =========================================================================================================
 -- OVERVIEW & ARCHITECTURE:
 -- This MacroQuest Lua script operates an asynchronous frame polling execution engine layout. By shifting
@@ -55,15 +55,28 @@
 --          If your enemy target dies or disappears, it clears state variables and jumps to Step 0 in under 1ms.
 --       B) State Machine Combat Sequencing:
 --          - STEP 0 (The Filtering Scanner): Automatically triggers assist via '/rsay' strictly once per creature.
---            Checks if RA target is an NPC, has dropped to or below 99% health, AND is within 35 feet.
+--            Checks if RA target is an NPC, has dropped to or below 99% health, AND is within radiusCheck feet.
+--            The radiusCheck distance is user-configurable via the UI slider (range: 30–100 feet, step: 5).
 --          - STEP 1 (Melee Approach & Engage): Squares up client angles via '/face' and fires high-speed directional
---            movement shortcuts ('/moveto mdist 5 id [ID]') to step your character right to 5ft melee thresholds.
+--            movement shortcuts ('/moveto mdist 10 id [ID]') to step your character right to 5ft melee thresholds.
 --          - STEP 2 (Hate Registration Sync): Triggers an '/assistme' call exactly once per target, if group size > 0.
 --          - STEP 3 (Snappy Reset Clearance): Throttles thread states using a compressed 300ms cushion window.
 --       C) Dynamic Follow Intercept Suspension: Temporarily suspends follow routines in combat, resuming automatically when clear.
---    -> ENGINE ISOLATION CRITERIA: Mod monitoring loops evaluate combat transitions and metrics strictly based on the status 
---       of the Raid Assist's target rather than local character variables to eliminate local hard-targeting.
+--       D) Proximity NPC Scanning: SpawnCount and NearestSpawn radius queries use radiusCheck feet as their scan
+--          boundary, matching the same configurable distance applied to RA target filtering.
+--    -> DEFENSIVE ENHANCEMENT: Removed frame-flash assists from drawUI to prevent infinite targeting loops when a mob dies.
 --
 -- 7) drawUI()
---    -> MECHANICS: Renders the graphical user control panel overlay via the ImGui rendering pipe. Enforces open state via 'ImGuiCond.Always'.
+--    -> MECHANICS: Renders the graphical user control panel overlay via the ImGui rendering pipe. Enforces open state
+--       via 'ImGuiCond.Always'. UI layout order (top to bottom):
+--         - RaidAssist Enemy Target display
+--         - Current NPC Targeted display
+--         - Current RaidAssist name and combat status (COMBAT / IDLE / OUT OF ZONE)
+--         - Raid member dropdown + Refresh button (hidden when not in raid)
+--         - Set RaidAssist button | Exit Script button
+--         [Visible only when a valid RaidAssist is set:]
+--         - NPC Target Radius Check label (displays current radiusCheck value in feet) + slider
+--             Slider range: 30–100 feet in increments of 5. Internally operates on a scaled range (6–20)
+--             multiplied by 5 to enforce discrete 5-foot stepping. Only rendered when RaidAssist is valid.
+--         - Announce toggle button (ON/OFF) | Follow Assist toggle button (START / STOP / Paused)
 -- =========================================================================================================

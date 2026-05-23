@@ -55,30 +55,16 @@
 --          If your enemy target dies or disappears, it clears state variables and jumps to Step 0 in under 1ms.
 --       B) State Machine Combat Sequencing:
 --          - STEP 0 (The Filtering Scanner): Automatically triggers assist via '/rsay' strictly once per creature.
---            Checks if RA target is an NPC, has dropped to or below 99% health, AND is within radiusCheck feet.
---            The radiusCheck distance is user-configurable via the UI slider (range: 30–100 feet, step: 5).
+--            Checks if RA target is an NPC, has dropped to or below 99% health, AND is within 35 feet.
 --          - STEP 1 (Melee Approach & Engage): Squares up client angles via '/face' and fires high-speed directional
 --            movement shortcuts ('/moveto mdist 10 id [ID]') to step your character right to 5ft melee thresholds.
 --          - STEP 2 (Hate Registration Sync): Triggers an '/assistme' call exactly once per target, if group size > 0.
 --          - STEP 3 (Snappy Reset Clearance): Throttles thread states using a compressed 300ms cushion window.
 --       C) Dynamic Follow Intercept Suspension: Temporarily suspends follow routines in combat, resuming automatically when clear.
---       D) Proximity NPC Scanning: SpawnCount and NearestSpawn radius queries use radiusCheck feet as their scan
---          boundary, matching the same configurable distance applied to RA target filtering.
 --    -> DEFENSIVE ENHANCEMENT: Removed frame-flash assists from drawUI to prevent infinite targeting loops when a mob dies.
 --
 -- 7) drawUI()
---    -> MECHANICS: Renders the graphical user control panel overlay via the ImGui rendering pipe. Enforces open state
---       via 'ImGuiCond.Always'. UI layout order (top to bottom):
---         - RaidAssist Enemy Target display
---         - Current NPC Targeted display
---         - Current RaidAssist name and combat status (COMBAT / IDLE / OUT OF ZONE)
---         - Raid member dropdown + Refresh button (hidden when not in raid)
---         - Set RaidAssist button | Exit Script button
---         [Visible only when a valid RaidAssist is set:]
---         - NPC Target Radius Check label (displays current radiusCheck value in feet) + slider
---             Slider range: 30–100 feet in increments of 5. Internally operates on a scaled range (6–20)
---             multiplied by 5 to enforce discrete 5-foot stepping. Only rendered when RaidAssist is valid.
---         - Announce toggle button (ON/OFF) | Follow Assist toggle button (START / STOP / Paused)
+--    -> MECHANICS: Renders the graphical user control panel overlay via the ImGui rendering pipe. Enforces open state via 'ImGuiCond.Always'.
 -- =========================================================================================================
 
 local mq = require('mq')
@@ -117,8 +103,7 @@ local lastFollowCheck = 0
 local followCheckCooldown = 500    
 local approachDistance = 20        
 local movementThreshold = 20       
-local assistCooldown = 300
-local radiusCheck = 30
+local assistCooldown = 300          
 
 local function ensureRaidAssistDeclared()
     if mq.parse('${Defined[RaidAssist]}') ~= 'TRUE' then
@@ -179,7 +164,7 @@ local function setRaidAssistAndExit()
     ensureRaidAssistDeclared()
     mq.cmd('/squelch /target clear')
     mq.cmdf('/varset RaidAssist %s', picked)	
-    mq.cmdf('/rsay FYI: I have just set my ►►►[RaidAssist]◄◄◄ to: †♥†[002D7E00000000000000000000000000000000000000000097D7AFA8 %s]†♥† !!!', picked)
+    mq.cmdf('/rsay FYI: I have just set my ~[RaidAssist]~ to: *[%s]* !!!', picked)
     print(string.format("\am[\atRaidAssistBot\am]\ay Locked onto target: \am[\ag %s \am]\ax", picked))
     
     local raSpawn = mq.TLO.Spawn(string.format("pc =%s", picked))
@@ -289,10 +274,10 @@ local function executeAutomationLogic()
     end
 
     local aggressiveMobNearby = false
-    local proxMobCount = mq.TLO.SpawnCount(string.format('npc radius %d', radiusCheck))() or 0
+    local proxMobCount = mq.TLO.SpawnCount('npc radius 35')() or 0
     if proxMobCount > 0 then
         for i = 1, proxMobCount do
-            local pMob = mq.TLO.NearestSpawn(string.format('%d, npc radius %d', i, radiusCheck))
+            local pMob = mq.TLO.NearestSpawn(string.format('%d, npc radius 35', i))
             if pMob and pMob() and pMob.Aggressive() and not pMob.Dead() then
                 aggressiveMobNearby = true
                 break
@@ -308,7 +293,7 @@ local function executeAutomationLogic()
             if tSpawn() and tSpawn.Type() == "NPC" and not tSpawn.Dead() then
                 local tHealth = tSpawn.PctHPs() or 100
                 local tDistance = tSpawn.Distance() or 999
-                if tHealth <= 99 and tDistance <= radiusCheck then
+                if tHealth <= 99 and tDistance <= 35 then
                     meetsTargetFilters = true
                     activeCombatTargetID = raTargetID
                 end
@@ -321,7 +306,7 @@ local function executeAutomationLogic()
                 if xt() and xt.Type() == "NPC" and not xt.Dead() then
                     local xtHealth = xt.PctHPs() or 100
                     local xtDistance = xt.Distance() or 999
-                    if xtHealth <= 99 and xtDistance <= radiusCheck then
+                    if xtHealth <= 99 and xtDistance <= 35 then
                         meetsTargetFilters = true
                         activeCombatTargetID = xt.ID() or 0
                         break
@@ -430,21 +415,9 @@ end
 
 local function drawUI()
     if not showWindow then return end
-
+	
     ImGui.SetNextWindowCollapsed(false, ImGuiCond.Always)
-
-    local minWidth = 300
-    if #names > 0 then
-        local longestName = ''
-        for _, name in ipairs(names) do
-            if #name > #longestName then longestName = name end
-        end
-        local namePixelWidth = ImGui.CalcTextSize(longestName)
-        -- account for the Refresh + Set RaidAssist buttons, combo arrow, and padding
-        minWidth = math.max(minWidth, namePixelWidth + 325)
-    end
-    ImGui.SetNextWindowSizeConstraints(minWidth, 0, 9999, 9999)
-
+	
     local shouldDraw, openRef = ImGui.Begin('RaidAssist Bot', true, ImGuiWindowFlags.AlwaysAutoResize)
     if not openRef then showWindow = false end
 	
@@ -495,10 +468,10 @@ local function drawUI()
             end
 
             local interfaceProxCheck = false
-            local uiProxCount = mq.TLO.SpawnCount(string.format('npc radius %d', radiusCheck))() or 0
+            local uiProxCount = mq.TLO.SpawnCount('npc radius 35')() or 0
             if uiProxCount > 0 then
                 for i = 1, uiProxCount do
-                    local uiMob = mq.TLO.NearestSpawn(string.format('%d, npc radius %d', i, radiusCheck))
+                    local uiMob = mq.TLO.NearestSpawn(string.format('%d, npc radius 35', i))
                     if uiMob and uiMob() and uiMob.Aggressive() and not uiMob.Dead() then
                         interfaceProxCheck = true
                         break
@@ -545,8 +518,7 @@ local function drawUI()
             if ImGui.Button('Refresh Raid List') then loadRaidNames() end
         else
             local refreshButtonWidth = 80
-            local setButtonWidth = 100
-            ImGui.PushItemWidth(-(refreshButtonWidth + setButtonWidth + 20))
+            ImGui.PushItemWidth(-refreshButtonWidth - 15)
             local preview = names[selectedIndex] or 'Select...'
             if ImGui.BeginCombo('##RaidMemberCombo', preview) then
                 for i = 1, #names do
@@ -558,21 +530,21 @@ local function drawUI()
             end
             ImGui.PopItemWidth()
             ImGui.SameLine()
+            ImGui.PushItemWidth(refreshButtonWidth)
             if ImGui.Button('Refresh') then loadRaidNames() end
-            ImGui.SameLine()
-            local disableSet = not hasRaidMembers
-            if disableSet then ImGui.BeginDisabled() end
-            if ImGui.Button('Set RaidAssist') then setRaidAssistAndExit() end
-            if disableSet then ImGui.EndDisabled() end
+            ImGui.PopItemWidth()
         end
+		
+        ImGui.Separator()
+        local disableSet = not hasRaidMembers
+        if disableSet then ImGui.BeginDisabled() end
+        if ImGui.Button('Set RaidAssist') then setRaidAssistAndExit() end
+        if disableSet then ImGui.EndDisabled() end
+		
+        ImGui.SameLine()
+        if ImGui.Button('Exit Script') then done = true end
 
         if isRaidAssistValid() then
-            ImGui.Separator()
-            ImGui.Text(string.format("NPC Target Radius Check: %d feet", radiusCheck))
-            ImGui.PushItemWidth(-1)
-            local newSliderVal, sliderChanged = ImGui.SliderInt('##RadiusCheck', radiusCheck / 5, 6, 20, ' ')
-            if sliderChanged then radiusCheck = newSliderVal * 5 end
-            ImGui.PopItemWidth()
             ImGui.Separator()
             local horizontalSplitWidth = (ImGui.GetWindowWidth() - 25) / 2
 
@@ -613,12 +585,6 @@ local function drawUI()
             end
             ImGui.PushItemWidth(-1)
             ImGui.PopStyleColor()
-
-            ImGui.Separator()
-            if ImGui.Button('Exit Script') then done = true end
-        else
-            ImGui.Separator()
-            if ImGui.Button('Exit Script') then done = true end
         end
     end
     ImGui.End()
