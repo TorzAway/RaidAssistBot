@@ -57,7 +57,7 @@
 --          - STEP 0 (The Filtering Scanner): Automatically triggers assist via '/rsay' strictly once per creature.
 --            Checks if RA target is an NPC, has dropped to or below 99% health, AND is within 35 feet.
 --          - STEP 1 (Melee Approach & Engage): Squares up client angles via '/face' and fires high-speed directional
---            movement shortcuts ('/moveto mdist 5 id [ID]') to step your character right to 5ft melee thresholds.
+--            movement shortcuts ('/moveto mdist 10 id [ID]') to step your character right to 5ft melee thresholds.
 --          - STEP 2 (Hate Registration Sync): Triggers an '/assistme' call exactly once per target, if group size > 0.
 --          - STEP 3 (Snappy Reset Clearance): Throttles thread states using a compressed 300ms cushion window.
 --       C) Dynamic Follow Intercept Suspension: Temporarily suspends follow routines in combat, resuming automatically when clear.
@@ -165,7 +165,7 @@ local function setRaidAssistAndExit()
     mq.cmd('/squelch /target clear')
     mq.cmdf('/varset RaidAssist %s', picked)	
     mq.cmdf('/rsay FYI: I have just set my ~[RaidAssist]~ to: *[%s]* !!!', picked)
-    print(string.format("\127[RaidAssistBot]\127 Locked onto target: [ %s ]", picked))
+    print(string.format("\am[\atRaidAssistBot\am]\ay Locked onto target: \am[\ag %s \am]\ax", picked))
     
     local raSpawn = mq.TLO.Spawn(string.format("pc =%s", picked))
     if raSpawn() then raSpawn.DoTarget() end
@@ -328,7 +328,9 @@ local function executeAutomationLogic()
             if announceAssist and raTargetID > 0 and raTargetID ~= lastNotifiedTargetID then
                 local raTargetName = backgroundResolvedTargetName
                 if raTargetName ~= "NONE" then
-                    mq.cmdf('/rsay FYI: I am assisting *[%s]* on target: -> *%s* <- !!!', raName, raTargetName)
+                    -- mq.cmdf('/rsay 1- FYI: I am assisting *[%s]* on target: -> *%s* <- !!!', raName, raTargetName)
+					mq.cmdf('/rsay FYI: I am assisting †♥†[%s]†♥† on target: ►►► (%s) ◄◄◄ !!!', raName, raTargetName)
+					print(string.format("\am[\atRaidAssistBot\am]\ay Locked onto raid target: \am[\ag %s \am]\ax", raTargetName))
                 end
                 lastNotifiedTargetID = raTargetID
             end
@@ -346,9 +348,11 @@ local function executeAutomationLogic()
             end
             
             if isAggressive or isOnXTarget then
-                mq.cmd('/face')
-                mq.cmdf('/moveto mdist 5 id %d', localTarget.ID())
-                mq.cmd('/attack on')
+                mq.cmd('/face fast')
+				if localTarget.Distance() > 15 then						
+					mq.cmdf('/moveto mdist 10 id %d', localTarget.ID())
+                end				
+				mq.cmd('/attack on')
                 assistStep = 2 
             end
         elseif (currentTime - assistTimerStart) >= 2000 then
@@ -591,7 +595,7 @@ loadRaidNames()
 
 mq.bind('/rbot', function()
     showWindow = not showWindow
-    print(string.format("\127[RaidAssistBot]\127 UI layout state toggled to: %s", tostring(showWindow)))
+    print(string.format("\am[\atRaidAssistBot\am]\ay UI layout state toggled to\ao: \ag%s\ax", tostring(showWindow)))
 end)
 
 mq.imgui.init('RaidAssistBotUI', drawUI)
