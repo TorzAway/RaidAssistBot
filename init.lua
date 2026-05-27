@@ -56,7 +56,7 @@
 --       B) State Machine Combat Sequencing:
 --          - STEP 0 (The Filtering Scanner): Automatically triggers assist via '/rsay' strictly once per creature.
 --            Checks if RA target is an NPC, has dropped to or below 99% health, AND is within radiusCheck feet.
---            The radiusCheck distance is user-configurable via the UI slider (range: 30–100 feet, step: 5).
+--            The radiusCheck distance is user-configurable via the UI slider (range: 10–100 feet, step: 5).
 --          - STEP 1 (Melee Approach & Engage): Squares up client angles via '/face' and fires high-speed directional
 --            movement shortcuts ('/moveto mdist 10 id [ID]') to step your character right to 5ft melee thresholds.
 --          - STEP 2 (Hate Registration Sync): Triggers an '/assistme' call exactly once per target, if group size > 0.
@@ -76,9 +76,15 @@
 --         - Set RaidAssist button | Exit Script button
 --         [Visible only when a valid RaidAssist is set:]
 --         - NPC Target Radius Check label (displays current radiusCheck value in feet) + slider
---             Slider range: 30–100 feet in increments of 5. Internally operates on a scaled range (6–20)
+--             Slider range: 10–100 feet in increments of 5. Internally operates on a scaled range (2–20)
 --             multiplied by 5 to enforce discrete 5-foot stepping. Only rendered when RaidAssist is valid.
 --         - Announce toggle button (ON/OFF) | Follow Assist toggle button (START / STOP / Paused)
+--         - Pause Assist toggle button (Pause Assist / Assist: PAUSED):
+--             When PAUSED: only the /assist state machine is suspended — no assists,
+--             no melee approach, no state-machine progression. The combat sequencer is
+--             reset to Step 0 on activation so resuming starts from a clean slate.
+--             Follow and Anchor procedures are NOT affected and continue to run normally.
+--             When re-enabled: full assist automation resumes on the next frame tick.
 --         - Anchor toggle button (ON / OFF):
 --             ON:  1) Clears local target via '/squelch /target clear'.
 --                  2) Calls broadcastGroupFollow("STOP") to halt all group movement.
@@ -100,6 +106,7 @@ end
 
 -- Structural Interface Viewport Control Variables
 local showWindow = true
+local forceExpand = false
 local done = false
 local selectedIndex = 1
 local names = {}
@@ -110,6 +117,11 @@ local announceAssist = true
 local anchorActive = false          
 local preAnchorFollowAssist = false  -- exact snapshot of followAssist at anchor activation
 local preAnchorFollowPaused  = false -- exact snapshot of followPausedForCombat at anchor activation
+local pauseAssist = false            -- when true, the /assist state machine is suspended (follow/anchor unaffected)
+local anchorCommandPending = false   -- true for a short window after /anchoron fires to keep the engine clear
+local anchorCommandPendingTimer = 0  -- timestamp (ms) when anchorCommandPending was set
+local pendingAnchorOn = false        -- deferred /anchoron flag: executed in the main loop, not the ImGui callback
+local pendingAnchorOnTimer = 0       -- timestamp (ms) when pendingAnchorOn was armed
 
 -- State Machine Processing Properties
 local assistStep = 0               
@@ -130,7 +142,7 @@ local followCheckCooldown = 500
 local approachDistance = 20        
 local movementThreshold = 20       
 local assistCooldown = 300
-local radiusCheck = 30
+local radiusCheck = 10
 
 local function ensureRaidAssistDeclared()
     if mq.parse('${Defined[RaidAssist]}') ~= 'TRUE' then
@@ -191,7 +203,7 @@ local function setRaidAssistAndExit()
     ensureRaidAssistDeclared()
     mq.cmd('/squelch /target clear')
     mq.cmdf('/varset RaidAssist %s', picked)	
-    mq.cmdf('/rsay FYI: I have just set my ►►►[RaidAssist]◄◄◄ to: †♥†[002D7E00000000000000000000000000000000000000000097D7AFA8 %s]†♥† !!!', picked)
+    mq.cmdf('/rsay FYI: ♠Ω♠ I have just set my ►►►[RaidAssist]◄◄◄ to: †♥†[002D7E00000000000000000000000000000000000000000097D7AFA8 %s]†♥† !!!', picked)
     print(string.format("\am[\atRaidAssistBot\am]\ay Locked onto target: \am[\ag %s \am]\ax", picked))
     
     local raSpawn = mq.TLO.Spawn(string.format("pc =%s", picked))
@@ -243,10 +255,20 @@ local function activateAnchor()
     if (mq.TLO.Group.Members() or 0) > 0 and mq.TLO.Plugin('mq2mono').IsLoaded() then
         local myID = mq.TLO.Me.ID() or 0
         if myID > 0 then
-            mq.cmdf('/e3bcgza /nav spawn id %d', myID)
-            mq.cmdf('/e3bcgza /anchoron')
+            mq.cmdf('/e3bcgz /nav spawn id %d', myID)
+
+            -- Suspend the assist engine immediately so no target can be acquired
+            anchorCommandPending      = true
+            anchorCommandPendingTimer = os.clock() * 1000
+
+            -- Defer /anchoron to the main loop. The main loop will confirm the target is truly
+            -- clear before sending the command, avoiding the ImGui-callback race condition.
+            pendingAnchorOn      = true
+            pendingAnchorOnTimer = os.clock() * 1000
         end
     end
+
+    mq.cmd('/rsay FYI: ⚓ Anchor is now ►[ON]◄ — Group movement halted and members anchored in place !!!')
 end
 
 local function deactivateAnchor()
@@ -254,7 +276,7 @@ local function deactivateAnchor()
 
     -- Release the anchor on all group members FIRST so they can actually move again
     if (mq.TLO.Group.Members() or 0) > 0 and mq.TLO.Plugin('mq2mono').IsLoaded() then
-        mq.cmd('/e3bcgza /anchoroff')
+        mq.cmd('/anchoroff')
     end
 
     -- Restore BOTH variables exactly as they were — the combat-resume branch in
@@ -269,15 +291,74 @@ local function deactivateAnchor()
     if followAssist then
         broadcastGroupFollow("START")
     end
+
+    mq.cmd('/rsay FYI: ⚓ Anchor is now ►[OFF]◄ — Group movement restrictions released !!!')
 end
 
 local function executeAutomationLogic()
+    -- While /anchoron is settling, keep the engine suspended so it cannot
+    -- re-acquire a target ID or issue an /assist before the anchor takes hold.
+    if anchorCommandPending then
+        local now = os.clock() * 1000
+        if (now - anchorCommandPendingTimer) < 500 then
+            return
+        end
+        anchorCommandPending = false
+    end
+
+    local currentTime = os.clock() * 1000
+    local amIInCombat = (mq.TLO.Me.CombatState() == "COMBAT" or mq.TLO.Me.Combat())
+
+    -- Dynamic Follow Intercept Suspension & Follow Navigation:
+    -- These always run regardless of pauseAssist so that follow and anchor
+    -- behaviour is never affected by the assist pause state.
+    if not anchorActive then
+        if amIInCombat and followAssist then
+            followAssist = false
+            followPausedForCombat = true
+            if mq.TLO.Plugin('mq2mono').IsLoaded() then
+                broadcastGroupFollow("STOP")
+            elseif mq.TLO.Plugin('mq2nav').IsLoaded() then
+                mq.cmd('/nav stop')
+            else
+                mq.cmd('/keypress back')
+            end
+        elseif not amIInCombat and followPausedForCombat then
+            if (currentTime - lastFollowCheck > 1000) then
+                followAssist = true
+                followPausedForCombat = false
+                broadcastGroupFollow("START")
+            end
+        end
+    end
+
+    if followAssist and (currentTime - lastFollowCheck > followCheckCooldown) then
+        lastFollowCheck = currentTime
+        if isRaidAssistValid() then
+            local followRAName = mq.parse('${RaidAssist}')
+            local followRASpawn = mq.TLO.Spawn(string.format("pc =%s", followRAName))
+            if followRASpawn and followRASpawn() then
+                if mq.TLO.Plugin('mq2nav').IsLoaded() then
+                    local distanceToTarget = followRASpawn.Distance() or 0
+                    if distanceToTarget > movementThreshold and not mq.TLO.Navigation.Active() then
+                        mq.cmdf('/nav spawn id %d |distance=%d', followRASpawn.ID(), approachDistance)
+                    end
+                else
+                    if mq.TLO.Me.Following.Name() ~= followRAName then mq.cmdf('/follow %s', followRAName) end
+                end
+            end
+        end
+    end
+
+    -- ── Assist engine gate ────────────────────────────────────────────────────
+    -- Everything below this point is part of /assist automation only.
+    -- Follow and anchor procedures above are unaffected by this flag.
+    if pauseAssist then return end
+
     if not isRaidAssistValid() then return end
 
     local raName = mq.parse('${RaidAssist}')
     local raSpawn = mq.TLO.Spawn(string.format("pc =%s", raName))
-    local currentTime = os.clock() * 1000
-    local amIInCombat = (mq.TLO.Me.CombatState() == "COMBAT" or mq.TLO.Me.Combat())
     local localTarget = mq.TLO.Target
 
     if not raSpawn() then return end
@@ -457,43 +538,17 @@ local function executeAutomationLogic()
         activeCombatTargetID = 0
     end
 
-    if not anchorActive then
-        if amIInCombat and followAssist then
-            followAssist = false
-            followPausedForCombat = true
-            if mq.TLO.Plugin('mq2mono').IsLoaded() then
-                broadcastGroupFollow("STOP")
-            elseif mq.TLO.Plugin('mq2nav').IsLoaded() then 
-                mq.cmd('/nav stop') 
-            else 
-                mq.cmd('/keypress back') 
-            end
-        elseif not amIInCombat and followPausedForCombat then
-            if (currentTime - lastFollowCheck > 1000) then
-                followAssist = true
-                followPausedForCombat = false
-                broadcastGroupFollow("START")
-            end
-        end
-    end
-
-    if followAssist and (currentTime - lastFollowCheck > followCheckCooldown) then
-        lastFollowCheck = currentTime
-        if mq.TLO.Plugin('mq2nav').IsLoaded() then
-            local distanceToTarget = raSpawn.Distance() or 0
-            if distanceToTarget > movementThreshold and not mq.TLO.Navigation.Active() then
-                mq.cmdf('/nav spawn id %d |distance=%d', raSpawn.ID(), approachDistance)
-            end
-        else
-            if mq.TLO.Me.Following.Name() ~= raName then mq.cmdf('/follow %s', raName) end
-        end
-    end
 end
 
 local function drawUI()
     if not showWindow then return end
 
-    ImGui.SetNextWindowCollapsed(false, ImGuiCond.Always)
+    if forceExpand then
+        ImGui.SetNextWindowCollapsed(false, ImGuiCond.Always)
+        forceExpand = false
+    else
+        ImGui.SetNextWindowCollapsed(false, ImGuiCond.Once)
+    end
 
     local minWidth = 300
     if #names > 0 then
@@ -632,7 +687,7 @@ local function drawUI()
             ImGui.Separator()
             ImGui.Text(string.format("NPC Target Radius Check: %d feet", radiusCheck))
             ImGui.PushItemWidth(-1)
-            local newSliderVal, sliderChanged = ImGui.SliderInt('##RadiusCheck', radiusCheck / 5, 6, 20, ' ')
+            local newSliderVal, sliderChanged = ImGui.SliderInt('##RadiusCheck', radiusCheck / 5, 2, 20, ' ')
             if sliderChanged then radiusCheck = newSliderVal * 5 end
             ImGui.PopItemWidth()
             ImGui.Separator()
@@ -658,10 +713,16 @@ local function drawUI()
                 if followPausedForCombat then
                     followPausedForCombat, followAssist = false, false
                     broadcastGroupFollow("STOP")
+                    mq.cmd('/rsay FYI: ⚠️ Follow Assist has been ►[STOPPED]◄ — Group follow is OFF !!!')
                 else
                     followAssist = not followAssist
                     followPausedForCombat = false
                     broadcastGroupFollow(followAssist and "START" or "STOP")
+                    if followAssist then
+                        mq.cmd('/rsay FYI: ✅ Follow Assist has been ►[STARTED]◄ — Group follow is ACTIVE !!!')
+                    else
+                        mq.cmd('/rsay FYI: ⚠ Follow Assist has been ►[STOPPED]◄ — Group follow is OFF !!!')
+                    end
                 end
                 if not followAssist then
                     if mq.TLO.Plugin('mq2mono').IsLoaded() then
@@ -692,6 +753,25 @@ local function drawUI()
             ImGui.PopStyleColor()
 
             ImGui.Separator()
+
+            -- Pause Assist toggle button (full width)
+            if pauseAssist then ImGui.PushStyleColor(ImGuiCol.Button, 0.7, 0.1, 0.1, 1.0)
+            else ImGui.PushStyleColor(ImGuiCol.Button, 0.15, 0.45, 0.15, 1.0) end
+            local pauseAssistLabel = pauseAssist and "Assist: PAUSED" or "Pause RaidAssist"
+            if ImGui.Button(pauseAssistLabel, -1, 0) then
+                pauseAssist = not pauseAssist
+                if pauseAssist then
+                    -- Reset sequencer so we start clean when unpaused
+                    assistStep = 0
+                    activeCombatTargetID = 0
+                    mq.cmd('/rsay FYI: ⚠ RaidAssist Bot has been ►[PAUSED]◄ — Assist automation is SUSPENDED !!!')
+                else
+                    mq.cmd('/rsay FYI: ✅ RaidAssist Bot has been ►[RESUMED]◄ — Assist automation is ACTIVE !!!')
+                end
+            end
+            ImGui.PopStyleColor()
+
+            ImGui.Separator()
             if ImGui.Button('Exit Script') then done = true end
         else
             ImGui.Separator()
@@ -706,13 +786,48 @@ loadRaidNames()
 
 mq.bind('/rbot', function()
     showWindow = not showWindow
+    if showWindow then forceExpand = true end
     print(string.format("\am[\atRaidAssistBot\am]\ay UI layout state toggled to\ao: \ag%s\ax", tostring(showWindow)))
 end)
 
 mq.imgui.init('RaidAssistBotUI', drawUI)
 
 while not done do
-    mq.doevents() 
+    mq.doevents()
+
+    -- Deferred /anchoron handler: runs in the main loop where mq.delay() is safe.
+    -- Waits 200 ms after activation, then polls until the target slot is genuinely
+    -- empty before sending /anchoron. This eliminates the ImGui-callback race condition
+    -- where /target clear was queued but not yet processed by the game client.
+    if pendingAnchorOn then
+        local now = os.clock() * 1000
+        if (now - pendingAnchorOnTimer) >= 200 then
+            -- Force-clear and confirm the target is truly gone before anchoring
+            local cleared = false
+            for _ = 1, 10 do
+                mq.cmd('/squelch /target clear')
+                mq.delay(50)
+                if not mq.TLO.Target() then
+                    cleared = true
+                    break
+                end
+            end
+
+            if cleared then
+                mq.cmdf('/anchoron')
+                -- Reset the engine-suspend timer from the moment /anchoron actually fires
+                anchorCommandPendingTimer = os.clock() * 1000
+            else
+                -- Target stubbornly present (e.g. rooted in combat); anchor anyway
+                mq.cmd('/squelch /target clear')
+                mq.cmdf('/anchoron')
+                anchorCommandPendingTimer = os.clock() * 1000
+            end
+
+            pendingAnchorOn = false
+        end
+    end
+
     mq.delay(100)
 end
 
