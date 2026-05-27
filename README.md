@@ -23,6 +23,6 @@ By shifting background automation routines directly into the ImGui draw tick lay
 <br>
 <img width="413" height="347" alt="RaidAsist_Bot_Image_7" src="https://github.com/user-attachments/assets/48bac42c-8e60-45c7-902e-b790996edf10" />
 <br>
-<img width="413" height="343" alt="RaidAsist_Bot_Image_8" src="https://github.com/user-attachments/assets/13727745-18ba-4f9c-ba78-ef7d7cfb7a2f" />
-<br>
 <img width="539" height="193" alt="RaidAsist_Bot_Image_9" src="https://github.com/user-attachments/assets/b87475c2-0269-401a-b797-30ede93c70e0" />
+<br>
+<img width="413" height="343" alt="RaidAsist_Bot_Image_8" src="https://github.com/user-attachments/assets/13727745-18ba-4f9c-ba78-ef7d7cfb7a2f" />
