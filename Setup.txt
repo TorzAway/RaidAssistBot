@@ -22,15 +22,7 @@ return 'Raid Assist [' .. (tostring(mq.TLO.MQ2Mono.Query('e3,E3Bots(' .. mq.TLO.
 
 CONTENT:
 
-/if (!${Defined[RaidAssist]}) /lua run raidassist
-
-/if (${Defined[RaidAssist]}) /multiline ; /mapfilter castradius 35 ; /assist ${RaidAssist} ; /delay 3s ${Target.ID}
-
-/if (${Target.ID} && ${Select[${Target.Type},npc,pet]} && (${Target.Distance}<=20)) /multi ; /attack on ; /assistme
-
-/if (${Target.ID} && ${Select[${Target.Type},npc,pet]} && (${Target.Distance}>20)) /multi ; /nav id ${Tareget.ID} ; /attack on ; /assistme
-
-/if (${Defined[RaidAssist]} && ${Target.ID} && ${Select[${Target.Type},npc,pet]}) /multiline ; /delay 1s ; /rs -- Assisting * ${RaidAssist} * on >> (${Target.CleanName}) << --
+/lua run RaidAssistBot
 
 
 ======================================================================

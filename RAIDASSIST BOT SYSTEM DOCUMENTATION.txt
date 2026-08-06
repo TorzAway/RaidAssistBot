@@ -6,22 +6,31 @@
 -- background automation routines directly into the ImGui draw tick layer, the thread tracks environment
 -- data synchronously with client graphics cycles, entirely eliminating instant-close crashes or thread drift.
 --
+-- SOURCE OF TRUTH (read this first):
+-- The authoritative "who is the assist" value is the Lua variable `currentRaidAssist`. Everything the script
+-- DISPLAYS or ACTS ON (the UI line, isRaidAssistValid, follow, and the assist engine) reads `currentRaidAssist`
+-- — NOT the parser variable `${RaidAssist}`. This is deliberate: the assist is written out with `/e3varset`,
+-- and `${RaidAssist}` lags behind (or does not reflect) that E3 write, so reading it caused the UI to show the
+-- previous name and the automation to act on stale data. `currentRaidAssist` updates instantly and persists for
+-- the life of the script (including across zones). The E3 variable is written only on deliberate events.
+--
 -- DETAILED FUNCTION DIRECTORY & STRUCTURAL SPECIFICATIONS:
 --
 -- 1) ensureRaidAssistDeclared()
---    -> MECHANICS: Probes the MacroQuest system variable tables using the parsing verification string
---       token '${Defined[RaidAssist]}'. If the result returns false, it issues a raw system memory insertion:
---       '/declare RaidAssist string outer ""' to stand up an unallocated outer variable placeholder.
+--    -> MECHANICS: Probes the MacroQuest system variable tables using '${Defined[RaidAssist]}'. If false, it
+--       issues '/declare RaidAssist string outer ""' to stand up an outer variable placeholder.
+--    -> NO PER-FRAME WRITES: This function performs NO writes to the assist value. (An earlier revision re-pushed
+--       '/e3varset' here every frame whenever '${RaidAssist}' read blank; because that parser variable does not
+--       reflect the E3 write, it looped '/e3varset' continuously. That restore was removed — the E3 variable is
+--       written only on the Set button and at startup detection, and `currentRaidAssist` is what the script reads.)
 --    -> INPUTS / PARAMETERS: None.
---    -> OPERATIONAL IMPACT: Establishes global macro variable permanence so parallel client systems can view
---       the current target assignments across boxing networks.
 --
 -- 2) isRaidAssistValid()
---    -> MECHANICS: Extracts the string contents stored inside the global character RaidAssist TLO variable.
---       Applies a multi-stage cascade trap to catch uninitialized memory signatures, empty lines, null markers,
---       or literal quote combinations ("" or '').
+--    -> MECHANICS: Reads the script's own `currentRaidAssist` value (the source of truth). Applies a cascade trap
+--       to reject uninitialized/empty/null/quote values, and treats the E3 sentinel "NOBODY" (case-insensitive)
+--       as "no assist".
 --    -> INPUTS / PARAMETERS: None.
---    -> RETURNS: Boolean [true] if a usable, non-blank name is found; boolean [false] if unassigned.
+--    -> RETURNS: Boolean [true] if a usable, non-blank, non-NOBODY name is held; boolean [false] otherwise.
 --
 -- 3) loadRaidNames()
 --    -> MECHANICS: Queries the game client's active raid data profile tables. Pulls full entity counts
@@ -29,13 +38,18 @@
 --       character name and maps group criteria filters via 'mq.TLO.Group.Member(name)() ~= nil' to discard active group 
 --       members. Applies alphabetical string sorting arrays to the remaining name stack.
 --    -> INPUTS / PARAMETERS: None.
---    -> ERROR HANDLING: If the character disbands or leaves a raid entirely (returning 0 members), it clears the 
---       selection arrays, forces the drop-down index to position 1, and wipes global macro variables to an empty line.
+--    -> RAIDASSIST-SAFE: loadRaidNames NEVER changes the assist. If the raid returns 0 members, or the filtered
+--       external-member list is empty, it only resets the local dropdown list/index and the hasRaidMembers flag —
+--       a locked or detected assist is left completely untouched. When names are present it also re-points the
+--       dropdown at the currently locked assist (currentRaidAssist) if that name is still in the raid.
 --
--- 4) setRaidAssistAndExit()
---    -> MECHANICS: References the sorted name stack using the active drop-down index value. Commits the string 
---       to the outer macro global, fires a cross-client broadcast text alert down the raid channel network using '/rsay',
---       and automatically issues an audio-visual target selection packet to track the newly selected helper character.
+-- 4) setRaidAssistAndExit()  [the "Set RaidAssist" button]
+--    -> MECHANICS: References the sorted name stack using the active drop-down index value. Records the picked name
+--       as `currentRaidAssist` (the source of truth), writes it to the E3 variable via '/e3varset RaidAssist <name>'
+--       (for cross-box propagation), fires a raid-channel broadcast via '/rsay', and targets the newly selected
+--       helper character.
+--    -> SOLE MUTATOR / LOCK: This is the ONLY user action that changes the assist to a NEW value. Once set (or
+--       detected at startup), nothing else in the script changes it; the automation and UI simply read it.
 --    -> INPUTS / PARAMETERS: None.
 --    -> DATA SANITIZATION: Resets all combat thread sequencers back to Step 0 (Idle) and zero-clears target identifier
 --       memory numbers to guarantee target switching does not cause command bouncing during pulls.
@@ -44,19 +58,20 @@
 --    -> MECHANICS: Manages multi-boxed character movement states using specialized group broadcast networks.
 --    -> PARAMETERS: actionType [String literal matching "START" or "STOP"].
 --       - "START": Pulls your character's exact numeric entity identity key ('mq.TLO.Me.ID()') and forwards a 
---         zone-wide mesh navigation order ('/e3bcgz /nav spawn id [ID]') to pull accounts to your exact vectors. 
+--         zone-wide mesh navigation order ('/e3bcgza /nav spawn id [ID]') to pull accounts to your exact vectors. 
 --         Fires a secondary frame call command '/followme 10' to coordinate immediate regional boxes.
 --       - "STOP": Assembles a safe multi-line packet shortcut string via '/multiline' sent across network channels 
 --         to instantly terminate navigation loops, drop active follows via '/followoff', and tap backward keys to kill momentum.
 --
 -- 6) executeAutomationLogic()
---    -> MECHANICS: The primary tactical tracking loops evaluated on every frame pass. Manages three sections:
+--    -> MECHANICS: The primary tactical tracking loops evaluated on every frame pass. Resolves the assist spawn
+--       from `currentRaidAssist`. Manages:
 --       A) Active Target Lifespan Invalidation: Tracks the target's status via numerical memory identifiers. 
 --          If your enemy target dies or disappears, it clears state variables and jumps to Step 0 in under 1ms.
 --       B) State Machine Combat Sequencing:
 --          - STEP 0 (The Filtering Scanner): Automatically triggers assist via '/rsay' strictly once per creature.
 --            Checks if RA target is an NPC, has dropped to or below 99% health, AND is within radiusCheck feet.
---            The radiusCheck distance is user-configurable via the UI slider (range: 30–100 feet, step: 5).
+--            The radiusCheck distance is user-configurable via the UI slider (range: 10–100 feet, step: 5).
 --          - STEP 1 (Melee Approach & Engage): Squares up client angles via '/face' and fires high-speed directional
 --            movement shortcuts ('/moveto mdist 10 id [ID]') to step your character right to 5ft melee thresholds.
 --          - STEP 2 (Hate Registration Sync): Triggers an '/assistme' call exactly once per target, if group size > 0.
@@ -71,12 +86,101 @@
 --       via 'ImGuiCond.Always'. UI layout order (top to bottom):
 --         - RaidAssist Enemy Target display
 --         - Current NPC Targeted display
---         - Current RaidAssist name and combat status (COMBAT / IDLE / OUT OF ZONE)
+--         - Current RaidAssist name and combat status (COMBAT / IDLE / OUT OF ZONE) — read from currentRaidAssist,
+--           so it updates the instant you press Set.
 --         - Raid member dropdown + Refresh button (hidden when not in raid)
---         - Set RaidAssist button | Exit Script button
+--         - Set RaidAssist button | Exit Script button (red, horizontally centered — drawExitButton())
 --         [Visible only when a valid RaidAssist is set:]
 --         - NPC Target Radius Check label (displays current radiusCheck value in feet) + slider
---             Slider range: 30–100 feet in increments of 5. Internally operates on a scaled range (6–20)
---             multiplied by 5 to enforce discrete 5-foot stepping. Only rendered when RaidAssist is valid.
+--             Slider range: 10–100 feet in increments of 5 (default: 35 feet). Internally operates on a
+--             scaled range (2–20) multiplied by 5 to enforce discrete 5-foot stepping. Only rendered when
+--             RaidAssist is valid.
 --         - Announce toggle button (ON/OFF) | Follow Assist toggle button (START / STOP / Paused)
+--         - Pause Assist toggle button (Pause Assist / Assist: PAUSED):
+--             When PAUSED: only the /assist state machine is suspended — no assists,
+--             no melee approach, no state-machine progression. The combat sequencer is
+--             reset to Step 0 on activation so resuming starts from a clean slate.
+--             Follow and Anchor procedures are NOT affected and continue to run normally.
+--             When re-enabled: full assist automation resumes on the next frame tick.
+--         - Anchor toggle button (ON / OFF):
+--             ON:  1) Clears local target via '/squelch /target clear'.
+--                  2) Calls broadcastGroupFollow("STOP") to halt all group movement.
+--                  3) Saves the current followAssist state for later restoration.
+--                  4) If in a group with mq2mono loaded, broadcasts '/nav spawn id [myID]' so
+--                     all group members navigate to the player's position, then broadcasts '/anchoron'
+--                     to anchor each member in place.
+--             OFF: Restores followAssist to its pre-anchor state and, if follow was previously
+--                  active, fires broadcastGroupFollow("START") to resume movement.
+--    -> CHEVRON = SWAP TO ICON (not a real minimise): After ImGui.Begin, drawUI checks ImGui.IsWindowCollapsed().
+--       When the chevron is clicked, the window is IMMEDIATELY un-collapsed (ImGui.SetWindowCollapsed(false)) so the
+--       native "minimise to a title bar" never actually shows; instead the script swaps to the icon exactly like the
+--       /rbot command (minimized = true, showWindow = true) and prints "View toggled to: icon". See MINIMISE-TO-ICON.
+--
+-- 8) renderIcon()
+--    -> MECHANICS: Draws the minimised view: a small borderless, background-less, auto-sized window whose only
+--       content is the swap image (raidassist_image.png), drawn at its true aspect ratio. The texture is loaded once
+--       at startup with mq.CreateTexture (after an io.open existence check) into iconImg; the PNG's real dimensions
+--       are read from its header (readPngSize) and scaled so the longest side equals ICON_MAX, preserving proportion.
+--    -> INTERACTION: The image is a plain image (not a button), so the borderless window can be DRAGGED by it to
+--       reposition the icon. A click (press + release with no drag) RESTORES the full window (minimized = false,
+--       forceExpand = true so it reopens expanded) and prints "View toggled to: window". A press that moves is a drag
+--       and does NOT restore.
+--    -> FALLBACK: If the image file is missing or fails to load, a small "RA" button is shown instead so
+--       minimise/restore still works. A startup console line reports whether the icon loaded, its path, and drawn size.
+--
+-- 9) renderUI()
+--    -> MECHANICS: The single callback registered with mq.imgui.init. Dispatches each frame: returns early if
+--       showWindow is false; otherwise draws renderIcon() when minimized is true, or drawUI() when not.
+--
+-- =========================================================================================================
+--  RAIDASSIST PERSISTENCE & LOCK MODEL
+-- =========================================================================================================
+--  The assist name lives in the Lua variable `currentRaidAssist` (the source of truth for all reads). Design goals:
+--  (1) the script never changes the assist on its own, and (2) a set/detected assist survives zoning and roster blips.
+--    • SET (new value): ONLY the Set RaidAssist button (setRaidAssistAndExit) sets a new assist. It updates
+--      currentRaidAssist and writes '/e3varset RaidAssist <name>' for cross-box propagation.
+--    • STARTUP DETECTION: At launch the script reads the persisted assist from E3 via the MQ2Mono query
+--        mq.TLO.MQ2Mono.Query('e3,E3Bots(' .. mq.TLO.Me.CleanName() .. ').Query(RaidAssistName)')
+--      If that returns a real name (anything other than "NOBODY", empty, null, or an unresolved '$' value), the
+--      script adopts it: currentRaidAssist = <name>, writes it into the working RaidAssist via '/e3varset', and points
+--      the dropdown at it. This lets you exit and restart without re-setting. If it is unset or "NOBODY", it prints
+--      that no active assist was detected and waits for a manual Set.
+--    • NO AUTOMATIC RE-PUSH: There is no per-frame or background re-write of the E3 variable. Writes happen only on
+--      the Set button and at startup detection. (This is what stopped the constant '/e3varset' loop.)
+--    • loadRaidNames and the Refresh buttons never change the assist; they only rebuild the dropdown list.
+--    • "NOBODY" is E3's unset sentinel and is treated everywhere (detection + isRaidAssistValid) as "no assist".
+--  READ vs WRITE VARIABLES: the script READS `currentRaidAssist` (Lua) for all behavior; it WRITES the E3 variable
+--  with '/e3varset RaidAssist ...' and READS the persisted value at startup via the E3Bots(...).Query(RaidAssistName)
+--  TLO. The parser variable '${RaidAssist}' is intentionally NOT used for live reads because it lags the E3 write.
+--
+-- =========================================================================================================
+--  MINIMISE-TO-ICON  (swap window <-> image)
+-- =========================================================================================================
+--  The main window can be shrunk to a small clickable image and back.
+--    • IMAGE: raidassist_image.png, loaded from the SAME directory as this init.lua (SCRIPT_DIR is resolved
+--      from debug.getinfo so it works wherever the script folder is placed). Drawn at its true aspect ratio (read
+--      from the PNG header) scaled so its longest side equals ICON_MAX pixels — a non-square image is not stretched.
+--    • MINIMISE: click the title-bar chevron. The window is un-collapsed on the same frame and swapped to the icon
+--      (behaves like /rbot, never leaving a collapsed title bar). Prints "View toggled to: icon".
+--    • RESTORE: click the icon image (press+release, no drag). Prints "View toggled to: window". Dragging moves it.
+--    • FALLBACK: if the image is absent/unloadable, an "RA" button stands in for the image.
+--    • Tunables: ICON_PATH, ICON_MAX (longest side in pixels; aspect preserved), ICON_PAD.
+--    • PERSISTENCE ACROSS RESTARTS (no file I/O): the current mode (window/icon) is stored in an MQ
+--      outer variable, RaidAssistBotViewState ("icon" or "window"), set every time the mode changes
+--      (chevron, icon click, or /rbot). Outer variables live in MacroQuest's own memory, independent of
+--      the Lua VM, so the value survives a script stop/restart within the same MQ session — the same
+--      mechanism used for RaidAssist. At launch, `minimized` is initialized from that variable
+--      (loadViewState()), so exiting and relaunching the script reopens in whichever mode it was last
+--      left in instead of always resetting to the full window. (Note: this does not persist across a
+--      full MacroQuest/game restart, since outer variables do not survive that — only a script
+--      stop/restart within the same MQ session.)
+--
+-- =========================================================================================================
+--  SLASH COMMANDS
+-- =========================================================================================================
+--  /rbot  — Toggles the swap-to-icon (minimise) state and prints "View toggled to: icon" or "View toggled to:
+--           window". If the full window is showing it minimises to the image; if minimised it restores the full
+--           window, reopened expanded. The window is never fully hidden — there is always either the window or the
+--           icon on screen. Takes no arguments. The title-bar chevron (to icon) and clicking the icon (to window)
+--           produce the same behavior and the same toggle messages.
 -- =========================================================================================================
